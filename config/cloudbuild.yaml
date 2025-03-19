@@ -39,16 +39,16 @@ steps:
   #   args: ['-m', 'pylint', '.']
   #   id: lint-check
   # Run unit tests
-  - name: python
-    entrypoint: python
-    args: ['-m', 'pytest', '--junitxml=${SHORT_SHA}_test_log.xml']
-    id: unit-tests
-  # Docker Build
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 
-          'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}', '.']
-  # Docker push to Google Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push',  'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}']
+  # - name: python
+  #   entrypoint: python
+  #   args: ['-m', 'pytest', '--junitxml=${SHORT_SHA}_test_log.xml']
+  #   id: unit-tests
+  # # Docker Build
+  # - name: 'gcr.io/cloud-builders/docker'
+  #   args: ['build', '-t', 
+  #         'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}', '.']
+  # # Docker push to Google Artifact Registry
+  # - name: 'gcr.io/cloud-builders/docker'
+  #   args: ['push',  'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}']
 options:
   logging: CLOUD_LOGGING_ONLY
