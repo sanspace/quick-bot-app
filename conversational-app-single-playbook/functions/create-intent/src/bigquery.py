@@ -4,7 +4,7 @@ import logging
 
 from src.models import Embedding
 
-BIG_QUERY_DATASET=""
+BIG_QUERY_DATASET = ""
 
 EMBEDDINGS_TABLE = "embeddings"
 EMBEDDINGS_ID_COLUMN = "id"
@@ -24,7 +24,7 @@ class BigQueryRepository:
     def run_query(self, query: str):
         logging.info(query)
         return self.client.query(query).result()
-    
+
     def get_row_by_id(self, table_id: str, id_column: str, id: str):
         query = f"""
                 SELECT * FROM `{BIG_QUERY_DATASET}.{table_id}` 
@@ -34,12 +34,14 @@ class BigQueryRepository:
 
     def insert_rows(self, table_id: str, embeddings: List[Embedding]):
         values = [embedding.to_dict() for embedding in embeddings]
-        errors = self.client.insert_rows(f"{BIG_QUERY_DATASET}.{table_id}", values, Embedding.__schema__())
+        errors = self.client.insert_rows(
+            f"{BIG_QUERY_DATASET}.{table_id}", values, Embedding.__schema__()
+        )
         if errors == []:
             print("Embeddings added")
         else:
             print("Encountered errors while inserting rows: {}".format(errors))
-            raise(Exception("Error inserting embeddings in BQ"))
+            raise (Exception("Error inserting embeddings in BQ"))
 
     def update_intent_status(self, intent_name: str, intent_status: str):
         query = f"""

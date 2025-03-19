@@ -9,8 +9,9 @@ LOCATIONS = [
     "us",
 ]
 
+
 class EngineService:
-    
+
     def get_all(self) -> List[Engine]:
         engines = []
         for location in LOCATIONS:

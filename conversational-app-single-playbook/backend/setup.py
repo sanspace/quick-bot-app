@@ -6,7 +6,7 @@ from src.model.intent import Intent
 from src.repository.big_query import CHATS_TABLE, EMBEDDINGS_TABLE
 from src.service.intent import INTENTS_TABLE
 
-BIG_QUERY_DATASET=""
+BIG_QUERY_DATASET = ""
 
 print("Setting up GCS... \n")
 

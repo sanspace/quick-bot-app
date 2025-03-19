@@ -7,6 +7,7 @@ from typing import List
 INTENTS_TABLE = "intents"
 INTENTS_TABLE_ID_COLUMN = "name"
 
+
 class IntentService:
 
     def __init__(self):
@@ -15,7 +16,9 @@ class IntentService:
 
     def get(self, intent_name: str):
         intent = None
-        results = self.repository.run_query(f'SELECT * FROM `{BIG_QUERY_DATASET}.{INTENTS_TABLE}` WHERE name = "{intent_name}"')
+        results = self.repository.run_query(
+            f'SELECT * FROM `{BIG_QUERY_DATASET}.{INTENTS_TABLE}` WHERE name = "{intent_name}"'
+        )
         for row in results:
             intent = Intent.__from_row__(row)
 
@@ -23,7 +26,9 @@ class IntentService:
 
     def get_all(self) -> List[Intent]:
         intents = []
-        results = self.repository.run_query(f"SELECT * FROM `{BIG_QUERY_DATASET}.{INTENTS_TABLE}`")
+        results = self.repository.run_query(
+            f"SELECT * FROM `{BIG_QUERY_DATASET}.{INTENTS_TABLE}`"
+        )
         for row in results:
             intent = Intent.__from_row__(row)
             intents.append(intent)
@@ -34,21 +39,27 @@ class IntentService:
         if self.get(intent.name):
             raise BadRequest(detail=f"Intent with name {intent.name} already exists")
         if intent.gcp_bucket and not self.gcs_repository.list(intent.gcp_bucket):
-            raise BadRequest(detail=f"No data found on {intent.gcp_bucket}, please, add your pdf files in the proper location.")
+            raise BadRequest(
+                detail=f"No data found on {intent.gcp_bucket}, please, add your pdf files in the proper location."
+            )
         if not intent.gcp_bucket:
             intent.status = "5"
         self.repository.insert_row(INTENTS_TABLE, intent.to_insert_string())
         return intent
-    
+
     def update(self, intent_name: str, intent: Intent):
         update_dict = {
-            'ai_model': f'"{intent.ai_model}"',
-            'ai_temperature': f'{intent.ai_temperature}',
-            'prompt': f'"""{intent.prompt}"""',
-            'questions': f'{str(intent.questions)}',
-            'status': f'"{intent.status}"',
+            "ai_model": f'"{intent.ai_model}"',
+            "ai_temperature": f"{intent.ai_temperature}",
+            "prompt": f'"""{intent.prompt}"""',
+            "questions": f"{str(intent.questions)}",
+            "status": f'"{intent.status}"',
         }
-        self.repository.update_row_by_id(INTENTS_TABLE, INTENTS_TABLE_ID_COLUMN, intent_name, update_dict)
+        self.repository.update_row_by_id(
+            INTENTS_TABLE, INTENTS_TABLE_ID_COLUMN, intent_name, update_dict
+        )
 
     def delete(self, intent_name: str):
-        self.repository.delete_row_by_id(INTENTS_TABLE, INTENTS_TABLE_ID_COLUMN, intent_name)
+        self.repository.delete_row_by_id(
+            INTENTS_TABLE, INTENTS_TABLE_ID_COLUMN, intent_name
+        )

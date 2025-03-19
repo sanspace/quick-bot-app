@@ -21,7 +21,9 @@ class ImagenSearchService:
         LOCATION = "northamerica-northeast1"
         client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
 
-        prompt = f"Make the image with a style '{image_style}'. The user prompt is: {term}"
+        prompt = (
+            f"Make the image with a style '{image_style}'. The user prompt is: {term}"
+        )
         # Imagen3 image generation
         images: types.GenerateImagesResponse = client.models.generate_images(
             model=generation_model,

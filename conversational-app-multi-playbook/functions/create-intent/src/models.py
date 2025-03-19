@@ -24,7 +24,7 @@ class Intent(BaseModel):
             SchemaField("is_active", "BOOLEAN", mode="REQUIRED"),
             SchemaField("gcp_bucket", "STRING", mode="REQUIRED"),
         ]
-    
+
     def __from_row__(row):
         return Intent(
             name=row[0],
@@ -48,7 +48,8 @@ class Intent(BaseModel):
             "is_active": self.is_active,
             "gcp_bucket": self.gcp_bucket,
         }
-    
+
+
 class Embedding(BaseModel):
     id: str
     text: str

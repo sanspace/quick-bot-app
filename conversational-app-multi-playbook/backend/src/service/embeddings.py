@@ -5,6 +5,7 @@ from typing import List
 EMBEDDINGS_TABLE = "embeddings"
 INTENTS_TABLE_ID_COLUMN = "id"
 
+
 class EmbeddingService:
 
     def __init__(self):
@@ -13,7 +14,7 @@ class EmbeddingService:
     def create(self, embedding: Embedding) -> Embedding:
         self.repository.insert_row(EMBEDDINGS_TABLE, embedding.to_insert_string())
         return embedding
-    
+
     def create_all(self, embeddings: List[Embedding]):
         for embedding in embeddings:
             self.create(embedding)

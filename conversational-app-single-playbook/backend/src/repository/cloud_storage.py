@@ -1,19 +1,20 @@
 from typing import List
 from google.cloud.storage import Client, Blob
 
-BUCKET="quick-bot"
+BUCKET = "quick-bot"
 
-INTENT_FOLDER="intents"
-EMBEDDINGS_FILE="embeddings.json"
-EMBEDDINGS_FOLDER="embeddings"
+INTENT_FOLDER = "intents"
+EMBEDDINGS_FILE = "embeddings.json"
+EMBEDDINGS_FOLDER = "embeddings"
 
-CONTENT_TYPE="text/plain"
+CONTENT_TYPE = "text/plain"
+
 
 class CloudStorageRepository:
 
     def __init__(self):
         self.client = Client()
-    
+
     def list(self, full_path: str) -> List[Blob]:
         bucket = full_path.split("/")[2]
         prefix = full_path.replace(f"gs://{bucket}/", "")

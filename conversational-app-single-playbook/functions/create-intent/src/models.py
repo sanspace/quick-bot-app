@@ -22,7 +22,7 @@ class Intent(BaseModel):
             SchemaField("gcp_bucket", "STRING", mode="REQUIRED"),
             SchemaField("questions", "STRING", mode="REPEATED"),
         ]
-    
+
     def __from_row__(row):
         return Intent(
             name=row[0],
@@ -43,7 +43,8 @@ class Intent(BaseModel):
             "gcp_bucket": self.gcp_bucket,
             "questions": self.questions,
         }
-    
+
+
 class Embedding(BaseModel):
     id: str
     text: str

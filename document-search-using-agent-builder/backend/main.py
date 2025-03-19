@@ -6,6 +6,7 @@ from os import getenv
 
 app = FastAPI()
 
+
 def configure_cors(app):
     url = getenv("FRONTEND_URL")
     if not url:
@@ -19,15 +20,18 @@ def configure_cors(app):
         allow_headers=["*"],
     )
 
+
 # Create a route to handle GET requests on root
 @app.get("/")
 async def root():
-    return 'You are calling Quick Bot Backend'
+    return "You are calling Quick Bot Backend"
+
 
 # Create a route to handle GET requests on /version
 @app.get("/api/version")
 def version():
-    return 'v0.0.1'
+    return "v0.0.1"
+
 
 @app.post("/api/audio_chat")
 async def audio_chat(audio_file: UploadFile = File(...)):
@@ -55,6 +59,7 @@ async def audio_chat(audio_file: UploadFile = File(...)):
         text = result.alternatives[0].transcript
 
     return text, 200
+
 
 configure_cors(app)
 

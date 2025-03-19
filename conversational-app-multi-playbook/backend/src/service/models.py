@@ -5,8 +5,8 @@ GOOGLE_AI_MODELS = [
     "gemini-1.5-flash-8b",
     "gemini-1.5-pro",
     "gemini-1.0-pro",
-
 ]
+
 
 class ModelService:
 
@@ -20,5 +20,5 @@ class ModelService:
             {
                 "name": "Custom",
                 "models": [cm.display_name for cm in custom_models],
-            }
+            },
         ]
