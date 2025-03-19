@@ -1,0 +1,54 @@
+steps:
+  - name: gcr.io/cloud-builders/git
+    args: ['fetch', '--depth=2']
+    id: git-fetch
+  # - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  #   entrypoint: git
+  #   args: ['diff --name-only HEAD~1 | xargs dirname | sort | uniq']
+  #   script: |
+  #     git diff --name-only HEAD~1 | xargs dirname | sort | uniq
+  #   id: 'get-changed-folders'
+  # Upgrade pip
+  - name: python
+    entrypoint: python
+    args: ['-m', 'pip', 'install', '--upgrade', 'pip']
+    id: pip-upgrade
+  # Install dependencies
+  - name: python
+    entrypoint: pip
+    args: ['install', '-r', 'requirements-dev.txt', '--user']
+    id: pip-install-deps
+  # Install tooling
+  - name: python
+    entrypoint: python
+    args: ['-m', 'pip', 'install', 'black', 'pylint', 'pytest', '--user']
+    id: pip-install-tooling
+  # Check License Text
+  # - name: python
+  #   entrypoint: 'python'
+  #   args: ['config/scripts/check_license.py']
+  #   id: license-check
+  # Check Formatting with black
+  - name: python
+    entrypoint: python
+    args: ['-m', 'black', '--check', '.']
+    id: format-check
+  # Check Linting with pylint
+  - name: python
+    entrypoint: python
+    args: ['-m', 'pylint', '.']
+    id: lint-check
+  # Run unit tests
+  - name: python
+    entrypoint: python
+    args: ['-m', 'pytest', '--junitxml=${SHORT_SHA}_test_log.xml']
+    id: unit-tests
+  # Docker Build
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 
+          'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}', '.']
+  # Docker push to Google Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push',  'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}']
+options:
+  logging: CLOUD_LOGGING_ONLY
