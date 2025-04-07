@@ -33,6 +33,19 @@ steps:
     entrypoint: python
     args: ['-m', 'black', '--check', '.']
     id: format-check
+  - name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -e
+        set -o pipefail
+
+        echo "_ARTIFACT_REGISTRY_REPO: $_ARTIFACT_REGISTRY_REPO"
+        echo "LOCATION: $LOCATION"
+        echo "PROJECT_ID: $PROJECT_ID"
+        echo "SHORT_SHA: $SHORT_SHA"
+
   # Check Linting with pylint
   # - name: python
   #   entrypoint: python
@@ -43,6 +56,7 @@ steps:
   #   entrypoint: python
   #   args: ['-m', 'pytest', '--junitxml=${SHORT_SHA}_test_log.xml']
   #   id: unit-tests
+
   # # Docker Build
   # - name: 'gcr.io/cloud-builders/docker'
   #   args: ['build', '-t', 
