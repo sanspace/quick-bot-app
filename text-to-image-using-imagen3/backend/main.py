@@ -6,7 +6,9 @@ from google.cloud import speech
 
 from src.controller.search import router as search_router
 
-app = FastAPI()
+app = FastAPI(
+    # TODO: add title here
+)
 
 
 def configure_cors(app):
