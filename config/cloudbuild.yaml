@@ -146,6 +146,7 @@ steps:
   - name: gcr.io/cloud-builders/docker
     id: BuildPush
     script: |
+      #!/usr/bin/env bash
       set -e
       set -o pipefail
 
