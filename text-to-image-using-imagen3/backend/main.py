@@ -8,7 +8,7 @@ from src.controller.search import router as search_router
 
 app = FastAPI(
     # TODO: add title here
-    # add more args such as version etc
+    # add more args such as version etc...
 )
 
 

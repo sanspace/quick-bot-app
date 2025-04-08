@@ -163,7 +163,7 @@ steps:
       done < "$BUILD_FILE" # Feed the file into the while loop
 
       echo "Step 2: Build and push process completed."
-    # automapSubstitutions: true
+    automapSubstitutions: true
   # ========================================
   # == Step 3: Deploy to Cloud Run =======
   # ========================================
@@ -235,6 +235,7 @@ steps:
       done < "$BUILD_FILE"
 
       echo "Step 3: Cloud Run deployment process finished."
+    automapSubstitutions: true
 substitutions:
   _ARTIFACT_REGISTRY_REPO: qbot
   _AR_LOCATION: us-central1 # Location of your Artifact Registry repo (e.g., us-central1)
