@@ -193,7 +193,7 @@ steps:
         done < "$BUILD_FILE" # Feed the file into the while loop
 
         echo "Step 2: Build and push process completed."
-    automapSubstitutions: true
+      automapSubstitutions: true
   # Check Linting with pylint
   # - name: python
   #   entrypoint: python
