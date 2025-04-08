@@ -2,12 +2,6 @@ steps:
   - name: gcr.io/cloud-builders/git
     args: ['fetch', '--depth=2']
     id: git-fetch
-  # - name: gcr.io/google.com/cloudsdktool/cloud-sdk
-  #   entrypoint: git
-  #   args: ['diff --name-only HEAD~1 | xargs dirname | sort | uniq']
-  #   script: |
-  #     git diff --name-only HEAD~1 | xargs dirname | sort | uniq
-  #   id: 'get-changed-folders'
   # Upgrade pip
   - name: python
     entrypoint: python
@@ -33,6 +27,20 @@ steps:
     entrypoint: python
     args: ['-m', 'black', '--check', '.']
     id: format-check
+  # Check Linting with pylint
+  # - name: python
+  #   entrypoint: python
+  #   args: ['-m', 'pylint', '.']
+  #   id: lint-check
+  # Run unit tests
+  # - name: python
+  #   entrypoint: python
+  #   args: ['-m', 'pytest', '--junitxml=${SHORT_SHA}_test_log.xml']
+  #   id: unit-tests
+
+  # ========================================
+  # == Step 1: Detect Changed Dirs =======
+  # ========================================
   - name: gcr.io/cloud-builders/gcloud # Provides git, gcloud, and bash
     id: DetectDirs
     script: |
@@ -40,8 +48,9 @@ steps:
       set -e # Exit script on first error
       set -o pipefail # Fail pipeline if any command fails
 
+      echo "Step 1: Detecting changed directories..."
       # Ensure Git history is available
-      git fetch origin $BRANCH_NAME --depth=2 || echo "Git fetch failed, proceeding with available history."
+      git fetch origin $BRANCH_NAME --depth=2 --single-branch || echo "Git fetch failed, proceeding"
 
       # Get changed files list
       PARENT_COMMIT=$(git rev-parse --short HEAD^ 2>/dev/null || echo "4b825dc642cb6eb9a060e54bf8d69288fbee4904")
@@ -61,27 +70,17 @@ steps:
       # --- Identify Directories to Build ---
       # 1. Find all potential application directories (depth 3, containing a Dockerfile)
       #    Example: Finds ./dir1/backend, ./dir1/frontend if they contain Dockerfile
-      echo "Scanning for all buildable application directories (depth 2 with Dockerfile)..."
+      echo "Scanning for all buildable application directories (depth 3 with Dockerfile)..."
       ALL_BUILDABLE_DIRS=$(find . -maxdepth 3 -mindepth 3 -type f -name 'Dockerfile' -printf '%h\n' | sed 's|^\./||' | sort -u)
 
       if [ -z "$ALL_BUILDABLE_DIRS" ]; then
-        echo "No directories containing Dockerfiles found at depth 2. Check structure."
+        echo "No directories containing Dockerfiles found at depth 3. Creating empty list file."
         touch /workspace/dirs_to_build.txt
         exit 0
       fi
       echo "Found potential buildable directories: ${ALL_BUILDABLE_DIRS}"
 
       # 2. Determine which of these buildable directories actually had changes within them
-      # FINAL_BUILD_LIST=""
-      # echo "Checking which buildable directories have changes..."
-      # for buildable_dir in $ALL_BUILDABLE_DIRS; do
-      #   # Check if any changed file path starts with this directory path + "/"
-      #   # Or if the changed file IS the Dockerfile in this directory
-      #   if echo "${CHANGED_FILES}" | grep -q -E "^${buildable_dir}/|^${buildable_dir}/Dockerfile$"; then
-      #     echo "--> Detected change affecting: $buildable_dir"
-      #     FINAL_BUILD_LIST="${FINAL_BUILD_LIST}${buildable_dir} "
-      #   fi
-      # done
       declare -a final_build_array=()
       echo "Checking which buildable directories have changes..."
       for buildable_dir in $ALL_BUILDABLE_DIRS; do
@@ -104,45 +103,11 @@ steps:
         echo "List saved to /workspace/dirs_to_build.txt"
       fi
       echo "Step 1 finished."
+    # automapSubstitutions: true
 
-      # if [ -z "$FINAL_BUILD_LIST" ]; then
-      #   echo "No changes detected within any buildable application directory. Nothing to build."
-      #   exit 0
-      # fi
-
-      # echo "-------------------------------------"
-      # echo "Final list of directories to build:"
-      # echo "${FINAL_BUILD_LIST}"
-      # echo "-------------------------------------"
-
-      # # --- Build and Push Loop ---
-      # for APP_DIR in $FINAL_BUILD_LIST; do
-      #   # Create image name suffix from directory path (e.g., "dir1/backend" -> "dir1-backend")
-      #   IMAGE_SUFFIX=$(echo "$APP_DIR" | tr '/' '-')
-      #   IMAGE_NAME="${ARTIFACT_REGISTRY_URL}/${IMAGE_SUFFIX}" # Full image path
-
-      #   echo "Processing directory: $APP_DIR"
-      #   echo "Building image: ${IMAGE_NAME}:${SHORT_SHA}"
-
-      #   # Run Docker build
-      #   docker build -t "${IMAGE_NAME}:${SHORT_SHA}" \
-      #               -t "${IMAGE_NAME}:latest" \
-      #               --label=git-commit=$SHORT_SHA \
-      #               "$APP_DIR" # Use the app directory as build context
-
-      #   echo "Pushing image: ${IMAGE_NAME}"
-      #   docker push "${IMAGE_NAME}:${SHORT_SHA}"
-      #   docker push "${IMAGE_NAME}:latest"
-
-      #   echo "Successfully built and pushed ${IMAGE_NAME} for directory ${APP_DIR}"
-      #   echo "-------------------------------------"
-      # done
-      # --- End Build and Push Loop ---
-
-      echo "Dynamic build process completed."
-    automapSubstitutions: true
-
-  # Step 2: Build and push images using the docker builder
+  # ========================================
+  # == Step 2: Build & Push Images =======
+  # ========================================
   - name: gcr.io/cloud-builders/docker
     id: BuildPush
     script: |
@@ -158,8 +123,15 @@ steps:
         exit 0
       fi
 
-      # Read config from substitutions
-      ARTIFACT_REGISTRY_URL="${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}"
+      # --- Configuration ---
+      # Use standardized substitutions with defaults for safety
+      AR_LOCATION="${_AR_LOCATION:-us-central1}"
+      AR_REPO="${_ARTIFACT_REGISTRY_REPO}" # Required, checked below
+
+      # Validate required variables & Construct URL
+      if [ -z "$AR_REPO" ]; then echo "Error: _ARTIFACT_REGISTRY_REPO substitution is empty!"; exit 1; fi
+      ARTIFACT_REGISTRY_URL="${AR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
+      # --- End Configuration ---
 
       echo "Step 2: Starting build/push from list in $BUILD_FILE"
       echo "Artifact Registry Target: ${ARTIFACT_REGISTRY_URL}"
@@ -191,27 +163,81 @@ steps:
       done < "$BUILD_FILE" # Feed the file into the while loop
 
       echo "Step 2: Build and push process completed."
-    automapSubstitutions: true
-  # Check Linting with pylint
-  # - name: python
-  #   entrypoint: python
-  #   args: ['-m', 'pylint', '.']
-  #   id: lint-check
-  # Run unit tests
-  # - name: python
-  #   entrypoint: python
-  #   args: ['-m', 'pytest', '--junitxml=${SHORT_SHA}_test_log.xml']
-  #   id: unit-tests
+    # automapSubstitutions: true
+  # ========================================
+  # == Step 3: Deploy to Cloud Run =======
+  # ========================================
+  - name: gcr.io/cloud-builders/gcloud
+    id: DeployToCloudRun
+    script: |
+      #!/usr/bin/env bash
+      set -e
+      set -o pipefail
 
-  # # Docker Build
-  # - name: 'gcr.io/cloud-builders/docker'
-  #   args: ['build', '-t', 
-  #         'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}', '.']
-  # # Docker push to Google Artifact Registry
-  # - name: 'gcr.io/cloud-builders/docker'
-  #   args: ['push',  'us-central1-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}/backend:${SHORT_SHA}']
+      BUILD_FILE="/workspace/dirs_to_build.txt"
+      if [ ! -s "$BUILD_FILE" ]; then
+        echo "Step 3: No directories listed in $BUILD_FILE. Nothing to deploy."
+        exit 0
+      fi
 
+      # --- Configuration ---
+      # Use substitutions with defaults
+      CLOUD_RUN_REGION="${_CLOUD_RUN_REGION:-us-central1}"
+      AR_LOCATION="${_AR_LOCATION:-us-central1}"
+      AR_REPO="${_ARTIFACT_REGISTRY_REPO}"
+
+      # Validate required variables
+      if [ -z "$AR_REPO" ]; then echo "Error: _ARTIFACT_REGISTRY_REPO substitution is empty!"; exit 1; fi
+      if [ -z "$CLOUD_RUN_REGION" ]; then echo "Error: _CLOUD_RUN_REGION substitution is empty!"; exit 1; fi
+      # --- End Configuration ---
+
+
+      echo "Step 3: Deploying services to Cloud Run region: ${CLOUD_RUN_REGION}"
+      echo "Reading list from $BUILD_FILE..."
+      echo "-------------------------------------"
+
+      while IFS= read -r APP_DIR || [ -n "$APP_DIR" ]; do
+        if [ -z "$APP_DIR" ]; then continue; fi
+
+        # --- Derive names ---
+        # Assumes service name matches image suffix (e.g., dir1-backend)
+        SERVICE_NAME=$(echo "$APP_DIR" | tr '/' '-')
+        IMAGE_SUFFIX=$SERVICE_NAME # Reuse the derived name
+        IMAGE_URI="${AR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_SUFFIX}:${SHORT_SHA}"
+        # --- End Derive names ---
+
+        echo "Deploying Service: ${SERVICE_NAME}"
+        echo "         Image URI: ${IMAGE_URI}"
+        echo "            Region: ${CLOUD_RUN_REGION}"
+
+        # --- gcloud run deploy command ---
+        # Add necessary flags based on your service requirements.
+        # Common flags:
+        # --allow-unauthenticated
+        # --service-account=your-service-account@...
+        # --set-env-vars=KEY1=val1,KEY2=val2
+        # --update-secrets=SECRET_NAME=secret:latest,...
+        # --memory=512Mi
+        # --cpu=1
+        # --concurrency=80
+        # --platform=managed # (default) or --platform=gke
+        gcloud run deploy "${SERVICE_NAME}" \
+          --image="${IMAGE_URI}" \
+          --region="${CLOUD_RUN_REGION}" \
+          --quiet # Suppress interactive prompts during automated deployment
+
+        # Add a small delay if needed, though usually not required
+        # sleep 5
+
+        echo "Successfully triggered deployment update for ${SERVICE_NAME}"
+        echo "-------------------------------------"
+
+      done < "$BUILD_FILE"
+
+      echo "Step 3: Cloud Run deployment process finished."
 substitutions:
   _ARTIFACT_REGISTRY_REPO: qbot
+  _AR_LOCATION: us-central1 # Location of your Artifact Registry repo (e.g., us-central1)
+  _CLOUD_RUN_REGION: us-central1 # Region where Cloud Run services should be deployed (e.g., us-central1)
 options:
   logging: CLOUD_LOGGING_ONLY
