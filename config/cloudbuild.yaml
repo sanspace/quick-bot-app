@@ -50,7 +50,7 @@ steps:
 
       echo "Step 1: Detecting changed directories..."
       # Ensure Git history is available
-      git fetch origin $BRANCH_NAME --depth=2 --single-branch || echo "Git fetch failed, proceeding"
+      git fetch origin $BRANCH_NAME --depth=2 || echo "Git fetch failed, proceeding"
 
       # Get changed files list
       PARENT_COMMIT=$(git rev-parse --short HEAD^ 2>/dev/null || echo "4b825dc642cb6eb9a060e54bf8d69288fbee4904")
@@ -126,7 +126,7 @@ steps:
       # --- Configuration ---
       # Use standardized substitutions with defaults for safety
       AR_LOCATION="${_AR_LOCATION:-us-central1}"
-      AR_REPO="${_ARTIFACT_REGISTRY_REPO}" # Required, checked below
+      AR_REPO="${_ARTIFACT_REGISTRY_REPO:-qbot}" # Required, checked below
 
       # Validate required variables & Construct URL
       if [ -z "$AR_REPO" ]; then echo "Error: _ARTIFACT_REGISTRY_REPO substitution is empty!"; exit 1; fi
@@ -184,7 +184,7 @@ steps:
       # Use substitutions with defaults
       CLOUD_RUN_REGION="${_CLOUD_RUN_REGION:-us-central1}"
       AR_LOCATION="${_AR_LOCATION:-us-central1}"
-      AR_REPO="${_ARTIFACT_REGISTRY_REPO}"
+      AR_REPO="${_ARTIFACT_REGISTRY_REPO:-qbot}"
 
       # Validate required variables
       if [ -z "$AR_REPO" ]; then echo "Error: _ARTIFACT_REGISTRY_REPO substitution is empty!"; exit 1; fi
@@ -241,3 +241,4 @@ substitutions:
   _CLOUD_RUN_REGION: us-central1 # Region where Cloud Run services should be deployed (e.g., us-central1)
 options:
   logging: CLOUD_LOGGING_ONLY
+  # machineType: E2_HIGHCPU_8 # Increase if builds/deploys are slow
