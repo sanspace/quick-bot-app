@@ -143,57 +143,54 @@ steps:
     automapSubstitutions: true
 
   # Step 2: Build and push images using the docker builder
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: gcr.io/cloud-builders/docker
     id: BuildPush
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        set -e
-        set -o pipefail
+    script: |
+      set -e
+      set -o pipefail
 
-        BUILD_FILE="/workspace/dirs_to_build.txt" # File created by previous step
+      BUILD_FILE="/workspace/dirs_to_build.txt" # File created by previous step
 
-        # Check if the file exists and is not empty (-s checks if size is greater than zero)
-        if [ ! -s "$BUILD_FILE" ]; then
-          echo "Step 2: No directories listed in $BUILD_FILE. Nothing to build."
-          exit 0
-        fi
+      # Check if the file exists and is not empty (-s checks if size is greater than zero)
+      if [ ! -s "$BUILD_FILE" ]; then
+        echo "Step 2: No directories listed in $BUILD_FILE. Nothing to build."
+        exit 0
+      fi
 
-        # Read config from substitutions
-        ARTIFACT_REGISTRY_URL="${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}"
+      # Read config from substitutions
+      ARTIFACT_REGISTRY_URL="${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REGISTRY_REPO}"
 
-        echo "Step 2: Starting build/push from list in $BUILD_FILE"
-        echo "Artifact Registry Target: ${ARTIFACT_REGISTRY_URL}"
+      echo "Step 2: Starting build/push from list in $BUILD_FILE"
+      echo "Artifact Registry Target: ${ARTIFACT_REGISTRY_URL}"
+      echo "-------------------------------------"
+
+      # Read the file line by line and build/push
+      while IFS= read -r APP_DIR || [ -n "$APP_DIR" ]; do
+        # Skip empty lines if any
+        if [ -z "$APP_DIR" ]; then continue; fi
+
+        IMAGE_SUFFIX=$(echo "$APP_DIR" | tr '/' '-')
+        IMAGE_NAME="${ARTIFACT_REGISTRY_URL}/${IMAGE_SUFFIX}"
+
+        echo "Processing directory: $APP_DIR"
+        echo "Building image: ${IMAGE_NAME}:${SHORT_SHA}"
+
+        # Docker commands WILL work here because this step uses the docker builder
+        docker build -t "${IMAGE_NAME}:${SHORT_SHA}" \
+                      -t "${IMAGE_NAME}:latest" \
+                      --label=git-commit=$SHORT_SHA \
+                      "$APP_DIR" # Build context is the specific app directory
+
+        echo "Pushing image: ${IMAGE_NAME}"
+        docker push "${IMAGE_NAME}:${SHORT_SHA}"
+        docker push "${IMAGE_NAME}:latest"
+
+        echo "Successfully built and pushed ${IMAGE_NAME}"
         echo "-------------------------------------"
+      done < "$BUILD_FILE" # Feed the file into the while loop
 
-        # Read the file line by line and build/push
-        while IFS= read -r APP_DIR || [ -n "$APP_DIR" ]; do
-          # Skip empty lines if any
-          if [ -z "$APP_DIR" ]; then continue; fi
-
-          IMAGE_SUFFIX=$(echo "$APP_DIR" | tr '/' '-')
-          IMAGE_NAME="${ARTIFACT_REGISTRY_URL}/${IMAGE_SUFFIX}"
-
-          echo "Processing directory: $APP_DIR"
-          echo "Building image: ${IMAGE_NAME}:${SHORT_SHA}"
-
-          # Docker commands WILL work here because this step uses the docker builder
-          docker build -t "${IMAGE_NAME}:${SHORT_SHA}" \
-                        -t "${IMAGE_NAME}:latest" \
-                        --label=git-commit=$SHORT_SHA \
-                        "$APP_DIR" # Build context is the specific app directory
-
-          echo "Pushing image: ${IMAGE_NAME}"
-          docker push "${IMAGE_NAME}:${SHORT_SHA}"
-          docker push "${IMAGE_NAME}:latest"
-
-          echo "Successfully built and pushed ${IMAGE_NAME}"
-          echo "-------------------------------------"
-        done < "$BUILD_FILE" # Feed the file into the while loop
-
-        echo "Step 2: Build and push process completed."
-      automapSubstitutions: true
+      echo "Step 2: Build and push process completed."
+    automapSubstitutions: true
   # Check Linting with pylint
   # - name: python
   #   entrypoint: python
