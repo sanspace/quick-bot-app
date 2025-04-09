@@ -74,20 +74,20 @@ steps:
   # == Step 2: Setup Python Env =========
   # ========================================
   # Upgrade pip
-  - name: python:3.9 # Using a specific python version image is often better
-    entrypoint: python
-    args: ['-m', 'pip', 'install', '--upgrade', 'pip']
-    id: pip-upgrade
+  # - name: python:3.9 # Using a specific python version image is often better
+  #   entrypoint: python
+  #   args: ['-m', 'pip', 'install', '--upgrade', 'pip']
+  #   id: pip-upgrade
   # Install dependencies (consider if needed globally or per-app)
-  - name: python:3.9
-    entrypoint: pip
-    args: ['install', '-r', 'requirements-dev.txt'] # Removed --user
-    id: pip-install-deps
+  # - name: python:3.9
+  #   entrypoint: pip
+  #   args: ['install', '-r', 'requirements-dev.txt'] # Removed --user
+  #   id: pip-install-deps
   # Install tooling (maybe redundant if in requirements-dev)
-  - name: python:3.9
-    entrypoint: pip
-    args: ['install', 'black', 'pylint', 'pytest'] # Removed --user
-    id: pip-install-tooling
+  # - name: python:3.9
+  #   entrypoint: pip
+  #   args: ['install', 'black', 'pylint', 'pytest'] # Removed --user
+  #   id: pip-install-tooling
 
   # ========================================
   # == Step 3: Per-Directory Checks ======
@@ -107,6 +107,8 @@ steps:
         echo "No changed directories listed in $INPUT_FILE. Skipping format check."
         exit 0
       fi
+
+      pip install black
 
       FAILURE_DETECTED=0
       while IFS= read -r APP_DIR || [ -n "$APP_DIR" ]; do
