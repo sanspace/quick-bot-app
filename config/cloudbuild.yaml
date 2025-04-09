@@ -1,68 +1,36 @@
 steps:
+  # ========================================
+  # == Step 0: Fetch Git History =========
+  # ========================================
   - name: gcr.io/cloud-builders/git
-    args: ['fetch', '--depth=2']
-    id: git-fetch
-  # Upgrade pip
-  - name: python
-    entrypoint: python
-    args: ['-m', 'pip', 'install', '--upgrade', 'pip']
-    id: pip-upgrade
-  # Install dependencies
-  - name: python
-    entrypoint: pip
-    args: ['install', '-r', 'requirements-dev.txt', '--user']
-    id: pip-install-deps
-  # Install tooling
-  - name: python
-    entrypoint: python
-    args: ['-m', 'pip', 'install', 'black', 'pylint', 'pytest', '--user']
-    id: pip-install-tooling
-  # Check License Text
-  # - name: python
-  #   entrypoint: 'python'
-  #   args: ['config/scripts/check_license.py']
-  #   id: license-check
-  # Check Formatting with black
-  - name: python
-    entrypoint: python
-    args: ['-m', 'black', '--check', '.']
-    id: format-check
-  # Check Linting with pylint
-  # - name: python
-  #   entrypoint: python
-  #   args: ['-m', 'pylint', '.']
-  #   id: lint-check
-  # Run unit tests
-  # - name: python
-  #   entrypoint: python
-  #   args: ['-m', 'pytest', '--junitxml=${SHORT_SHA}_test_log.xml']
-  #   id: unit-tests
+    id: GitFetch # Changed ID slightly
+    # Fetch only required branch history, depth 2 for diffing parent
+    args: ['fetch', '--depth=2', 'origin', '$BRANCH_NAME']
 
   # ========================================
   # == Step 1: Detect Changed Dirs =======
   # ========================================
-  - name: gcr.io/cloud-builders/gcloud # Provides git, gcloud, and bash
+  - name: gcr.io/cloud-builders/gcloud # Has git, bash, find etc.
     id: DetectDirs
     script: |
       #!/usr/bin/env bash
-      set -e # Exit script on first error
-      set -o pipefail # Fail pipeline if any command fails
+      set -e
+      set -o pipefail
+
+      OUTPUT_FILE="/workspace/changed_app_dirs.txt"
 
       echo "Step 1: Detecting changed directories..."
-      # Ensure Git history is available
-      git fetch origin $BRANCH_NAME --depth=2 || echo "Git fetch failed, proceeding"
 
-      # Get changed files list
+      # Git history should be present from previous step
       PARENT_COMMIT=$(git rev-parse --short HEAD^ 2>/dev/null || echo "4b825dc642cb6eb9a060e54bf8d69288fbee4904")
       CHANGED_FILES=$(git diff --name-only $PARENT_COMMIT $COMMIT_SHA)
 
       if [ -z "$CHANGED_FILES" ]; then
-        echo "No files changed detected between $PARENT_COMMIT and $COMMIT_SHA. Exiting."
+        echo "No files changed detected. Creating empty list file."
         # Create empty file to signal no builds needed in next step
-        touch /workspace/dirs_to_build.txt
+        touch $OUTPUT_FILE
         exit 0
       fi
-
       echo "Files changed in commit $SHORT_SHA:"
       echo "${CHANGED_FILES}"
       echo "-------------------------------------"
@@ -72,41 +40,160 @@ steps:
       #    Example: Finds ./dir1/backend, ./dir1/frontend if they contain Dockerfile
       echo "Scanning for all buildable application directories (depth 3 with Dockerfile)..."
       ALL_BUILDABLE_DIRS=$(find . -maxdepth 3 -mindepth 3 -type f -name 'Dockerfile' -printf '%h\n' | sed 's|^\./||' | sort -u)
-
       if [ -z "$ALL_BUILDABLE_DIRS" ]; then
-        echo "No directories containing Dockerfiles found at depth 3. Creating empty list file."
-        touch /workspace/dirs_to_build.txt
+        echo "No directories with Dockerfiles found at depth 3. Creating empty list file."
+        touch $OUTPUT_FILE
         exit 0
       fi
       echo "Found potential buildable directories: ${ALL_BUILDABLE_DIRS}"
 
       # 2. Determine which of these buildable directories actually had changes within them
-      declare -a final_build_array=()
+      declare -a final_dirs_array=() # Renamed array
       echo "Checking which buildable directories have changes..."
       for buildable_dir in $ALL_BUILDABLE_DIRS; do
         if echo "${CHANGED_FILES}" | grep -q -E "^${buildable_dir}/|^${buildable_dir}/Dockerfile$"; then
           echo "--> Change detected affecting: $buildable_dir"
-          final_build_array+=("$buildable_dir")
+          final_dirs_array+=("$buildable_dir")
         fi
       done
-      FINAL_BUILD_LIST=$(echo "$final_build_array" | sed 's/ *$//') # Trim trailing space
       # --- End Directory Identification ---
 
       # Write the final list to a file in the workspace for the next step
-      if [ ${#final_build_array[@]} -eq 0 ]; then
-        echo "No changes detected within any buildable application directory. Creating empty list file."
-        touch /workspace/dirs_to_build.txt
+      if [ ${#final_dirs_array[@]} -eq 0 ]; then
+        echo "No changes in buildable dirs. Creating empty list file."
+        touch $OUTPUT_FILE
       else
-        echo "Directories to build:"
-        printf "  %s\n" "${final_build_array[@]}"
-        printf "%s\n" "${final_build_array[@]}" > /workspace/dirs_to_build.txt
-        echo "List saved to /workspace/dirs_to_build.txt"
+        echo "Directories affected:"
+        printf "  %s\n" "${final_dirs_array[@]}"
+        printf "%s\n" "${final_dirs_array[@]}" > $OUTPUT_FILE
+        echo "List saved to $OUTPUT_FILE"
       fi
       echo "Step 1 finished."
-    # automapSubstitutions: true
 
   # ========================================
-  # == Step 2: Build & Push Images =======
+  # == Step 2: Setup Python Env =========
+  # ========================================
+  # Upgrade pip
+  - name: python:3.9 # Using a specific python version image is often better
+    entrypoint: python
+    args: ['-m', 'pip', 'install', '--upgrade', 'pip']
+    id: pip-upgrade
+  # Install dependencies (consider if needed globally or per-app)
+  - name: python:3.9
+    entrypoint: pip
+    args: ['install', '-r', 'requirements-dev.txt'] # Removed --user
+    id: pip-install-deps
+  # Install tooling (maybe redundant if in requirements-dev)
+  - name: python:3.9
+    entrypoint: pip
+    args: ['install', 'black', 'pylint', 'pytest'] # Removed --user
+    id: pip-install-tooling
+
+  # ========================================
+  # == Step 3: Per-Directory Checks ======
+  # ========================================
+  # Check Formatting with black (only on changed dirs)
+  - name: python:3.9
+    id: FormatCheck
+    script: |
+      #!/usr/bin/env bash
+      set -e
+      set -o pipefail
+
+      INPUT_FILE="/workspace/changed_app_dirs.txt"
+      echo "Step 3.1: Running format check (black) on changed directories..."
+
+      if [ ! -s "$INPUT_FILE" ]; then
+        echo "No changed directories listed in $INPUT_FILE. Skipping format check."
+        exit 0
+      fi
+
+      FAILURE_DETECTED=0
+      while IFS= read -r APP_DIR || [ -n "$APP_DIR" ]; do
+        if [ -z "$APP_DIR" ]; then continue; fi
+        echo "--- Checking format in: $APP_DIR ---"
+        # Use python -m to ensure correct executable is found
+        if ! python -m black --check "$APP_DIR"; then
+          echo "!!! Black formatting check failed for $APP_DIR !!!"
+          FAILURE_DETECTED=1
+        fi
+      done < "$INPUT_FILE"
+
+      if [ "$FAILURE_DETECTED" -ne 0 ]; then
+         echo "Format check failed in one or more directories."
+         exit 1 # Fail the build step
+      fi
+      echo "Format check passed for all changed directories."
+
+  # Check Linting with pylint (only on changed dirs) - Uncomment and adapt if needed
+  # - name: python:3.9
+  #   id: LintCheck
+  #   script: |
+  #     #!/usr/bin/env bash
+  #     set -e
+  #     set -o pipefail
+  #
+  #     INPUT_FILE="/workspace/changed_app_dirs.txt"
+  #     echo "Step 3.2: Running lint check (pylint) on changed directories..."
+  #
+  #     if [ ! -s "$INPUT_FILE" ]; then
+  #       echo "No changed directories listed in $INPUT_FILE. Skipping lint check."
+  #       exit 0
+  #     fi
+  #
+  #     FAILURE_DETECTED=0
+  #     while IFS= read -r APP_DIR || [ -n "$APP_DIR" ]; do
+  #       if [ -z "$APP_DIR" ]; then continue; fi
+  #       echo "--- Linting: $APP_DIR ---"
+  #       # Add necessary pylint flags, consider .pylintrc files
+  #       if ! python -m pylint "$APP_DIR"; then
+  #         echo "!!! Pylint check failed for $APP_DIR !!!"
+  #         FAILURE_DETECTED=1
+  #       fi
+  #     done < "$INPUT_FILE"
+  #
+  #     if [ "$FAILURE_DETECTED" -ne 0 ]; then
+  #        echo "Lint check failed in one or more directories."
+  #        exit 1
+  #     fi
+  #     echo "Lint check passed for all changed directories."
+
+  # Run unit tests (only on changed dirs) - Uncomment and adapt if needed
+  # - name: python:3.9
+  #   id: UnitTests
+  #   script: |
+  #     #!/usr/bin/env bash
+  #     set -e
+  #     set -o pipefail
+  #
+  #     INPUT_FILE="/workspace/changed_app_dirs.txt"
+  #     echo "Step 3.3: Running unit tests (pytest) on changed directories..."
+  #
+  #     if [ ! -s "$INPUT_FILE" ]; then
+  #       echo "No changed directories listed in $INPUT_FILE. Skipping unit tests."
+  #       exit 0
+  #     fi
+  #
+  #     FAILURE_DETECTED=0
+  #     while IFS= read -r APP_DIR || [ -n "$APP_DIR" ]; do
+  #       if [ -z "$APP_DIR" ]; then continue; fi
+  #       echo "--- Testing: $APP_DIR ---"
+  #       # Add necessary pytest flags (e.g., -v, --cov)
+  #       # Consider collecting reports if needed
+  #       if ! python -m pytest "$APP_DIR"; then
+  #         echo "!!! Pytest failed for $APP_DIR !!!"
+  #         FAILURE_DETECTED=1
+  #       fi
+  #     done < "$INPUT_FILE"
+  #
+  #     if [ "$FAILURE_DETECTED" -ne 0 ]; then
+  #        echo "Unit tests failed in one or more directories."
+  #        exit 1
+  #     fi
+  #     echo "Unit tests passed for all changed directories."
+
+  # ========================================
+  # == Step 4: Build & Push Images =======
   # ========================================
   - name: gcr.io/cloud-builders/docker
     id: BuildPush
@@ -115,11 +202,11 @@ steps:
       set -e
       set -o pipefail
 
-      BUILD_FILE="/workspace/dirs_to_build.txt" # File created by previous step
+      BUILD_FILE="/workspace/changed_app_dirs.txt" # File created by previous step
 
       # Check if the file exists and is not empty (-s checks if size is greater than zero)
       if [ ! -s "$BUILD_FILE" ]; then
-        echo "Step 2: No directories listed in $BUILD_FILE. Nothing to build."
+        echo "Step 4: No directories listed in $BUILD_FILE. Nothing to build."
         exit 0
       fi
 
@@ -133,7 +220,7 @@ steps:
       ARTIFACT_REGISTRY_URL="${AR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
       # --- End Configuration ---
 
-      echo "Step 2: Starting build/push from list in $BUILD_FILE"
+      echo "Step 4: Starting build/push from list in $BUILD_FILE"
       echo "Artifact Registry Target: ${ARTIFACT_REGISTRY_URL}"
       echo "-------------------------------------"
 
@@ -148,7 +235,6 @@ steps:
         echo "Processing directory: $APP_DIR"
         echo "Building image: ${IMAGE_NAME}:${SHORT_SHA}"
 
-        # Docker commands WILL work here because this step uses the docker builder
         docker build -t "${IMAGE_NAME}:${SHORT_SHA}" \
                       -t "${IMAGE_NAME}:latest" \
                       --label=git-commit=$SHORT_SHA \
@@ -161,11 +247,12 @@ steps:
         echo "Successfully built and pushed ${IMAGE_NAME}"
         echo "-------------------------------------"
       done < "$BUILD_FILE" # Feed the file into the while loop
+      
+      echo "Step 4: Build and push process completed."
+    # removed automapSubstitutions
 
-      echo "Step 2: Build and push process completed."
-    automapSubstitutions: true
   # ========================================
-  # == Step 3: Deploy to Cloud Run =======
+  # == Step 5: Deploy to Cloud Run =======
   # ========================================
   - name: gcr.io/cloud-builders/gcloud
     id: DeployToCloudRun
@@ -174,9 +261,9 @@ steps:
       set -e
       set -o pipefail
 
-      BUILD_FILE="/workspace/dirs_to_build.txt"
+      BUILD_FILE="/workspace/changed_app_dirs.txt" # Use the renamed file
       if [ ! -s "$BUILD_FILE" ]; then
-        echo "Step 3: No directories listed in $BUILD_FILE. Nothing to deploy."
+        echo "Step 5: No directories listed in $BUILD_FILE. Nothing to deploy."
         exit 0
       fi
 
@@ -187,12 +274,11 @@ steps:
       AR_REPO="${_ARTIFACT_REGISTRY_REPO:-qbot}"
 
       # Validate required variables
-      if [ -z "$AR_REPO" ]; then echo "Error: _ARTIFACT_REGISTRY_REPO substitution is empty!"; exit 1; fi
-      if [ -z "$CLOUD_RUN_REGION" ]; then echo "Error: _CLOUD_RUN_REGION substitution is empty!"; exit 1; fi
+      if [ -z "$AR_REPO" ]; then echo "Error: _ARTIFACT_REGISTRY_REPO empty!"; exit 1; fi
+      if [ -z "$CLOUD_RUN_REGION" ]; then echo "Error: _CLOUD_RUN_REGION empty!"; exit 1; fi
       # --- End Configuration ---
 
-
-      echo "Step 3: Deploying services to Cloud Run region: ${CLOUD_RUN_REGION}"
+      echo "Step 5: Deploying services to Cloud Run region: ${CLOUD_RUN_REGION}"
       echo "Reading list from $BUILD_FILE..."
       echo "-------------------------------------"
 
@@ -202,7 +288,7 @@ steps:
         # --- Derive names ---
         # Assumes service name matches image suffix (e.g., dir1-backend)
         SERVICE_NAME=$(echo "$APP_DIR" | tr '/' '-')
-        IMAGE_SUFFIX=$SERVICE_NAME # Reuse the derived name
+        IMAGE_SUFFIX=$SERVICE_NAME
         IMAGE_URI="${AR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${IMAGE_SUFFIX}:${SHORT_SHA}"
         # --- End Derive names ---
 
@@ -225,21 +311,22 @@ steps:
           --image="${IMAGE_URI}" \
           --region="${CLOUD_RUN_REGION}" \
           --quiet # Suppress interactive prompts during automated deployment
-
-        # Add a small delay if needed, though usually not required
-        # sleep 5
-
+        
         echo "Successfully triggered deployment update for ${SERVICE_NAME}"
         echo "-------------------------------------"
 
       done < "$BUILD_FILE"
 
-      echo "Step 3: Cloud Run deployment process finished."
+      echo "Step 5: Cloud Run deployment process finished."
     automapSubstitutions: true
+
+# ========================================
+# == Substitutions & Options ===========
+# ========================================
 substitutions:
   _ARTIFACT_REGISTRY_REPO: qbot
-  _AR_LOCATION: us-central1 # Location of your Artifact Registry repo (e.g., us-central1)
-  _CLOUD_RUN_REGION: us-central1 # Region where Cloud Run services should be deployed (e.g., us-central1)
+  _AR_LOCATION: us-central1
+  _CLOUD_RUN_REGION: us-central1
 options:
   logging: CLOUD_LOGGING_ONLY
-  # machineType: E2_HIGHCPU_8 # Increase if builds/deploys are slow
+  # machineType: E2_HIGHCPU_8
